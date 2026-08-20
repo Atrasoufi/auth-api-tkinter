@@ -4,8 +4,6 @@ Desktop auth client (tkinter) for the Django scenario_django API.
 Forms match the wireframe:
   Form 1 — Login / Register tabs
   Form 2 — Profile / Data tabs (after login)
-
-Login uses email (USERNAME_FIELD on the backend).
 """
 
 from __future__ import annotations
@@ -16,10 +14,6 @@ from tkinter import messagebox, ttk
 import requests
 
 from api_client import APIError, AuthAPI
-
-# ---------------------------------------------------------------------------
-# Theme
-# ---------------------------------------------------------------------------
 
 BG = "#1a1b26"
 CARD = "#24283b"
@@ -47,6 +41,7 @@ class AuthApp(tk.Tk):
 
         self.api = AuthAPI(base_url=api_base)
         self.current_user: dict | None = None
+        self._notes: list[dict] = []
 
         self._setup_styles()
         self.container = tk.Frame(self, bg=BG)
@@ -54,17 +49,10 @@ class AuthApp(tk.Tk):
 
         self.show_auth()
 
-    # ---- styles ----
-
     def _setup_styles(self):
         style = ttk.Style(self)
         style.theme_use("clam")
-
-        style.configure(
-            "TNotebook",
-            background=CARD,
-            borderwidth=0,
-        )
+        style.configure("TNotebook", background=CARD, borderwidth=0)
         style.configure(
             "TNotebook.Tab",
             background=ENTRY_BG,
@@ -77,8 +65,6 @@ class AuthApp(tk.Tk):
             background=[("selected", CARD)],
             foreground=[("selected", ACCENT)],
         )
-
-    # ---- helpers ----
 
     def _clear(self):
         for w in self.container.winfo_children():
@@ -159,22 +145,15 @@ class AuthApp(tk.Tk):
     def _ok(self, msg: str):
         messagebox.showinfo("Success", msg, parent=self)
 
-    # ======================================================================
-    # Form 1 — Auth (Login / Register)
-    # ======================================================================
+    # ---- Auth ----
 
     def show_auth(self):
         self._clear()
         self.geometry("420x640")
 
-        title = tk.Label(
-            self.container,
-            text="Welcome",
-            bg=BG,
-            fg=TEXT,
-            font=FONT_TITLE,
-        )
-        title.pack(pady=(0, 12))
+        tk.Label(
+            self.container, text="Welcome", bg=BG, fg=TEXT, font=FONT_TITLE
+        ).pack(pady=(0, 12))
 
         card = self._card(self.container)
         nb = ttk.Notebook(card)
@@ -282,13 +261,11 @@ class AuthApp(tk.Tk):
 
         self._button(frame, "Register", do_register)
 
-    # ======================================================================
-    # Form 2 — Main (Profile / Data)
-    # ======================================================================
+    # ---- Main (Profile / Data) ----
 
     def show_main(self):
         self._clear()
-        self.geometry("440x580")
+        self.geometry("480x640")
 
         header = tk.Frame(self.container, bg=BG)
         header.pack(fill="x", pady=(0, 12))
@@ -297,11 +274,7 @@ class AuthApp(tk.Tk):
             self.current_user.get("email", "User") if self.current_user else "User"
         )
         tk.Label(
-            header,
-            text=f"Hi, {user_label}",
-            bg=BG,
-            fg=TEXT,
-            font=FONT_TITLE,
+            header, text=f"Hi, {user_label}", bg=BG, fg=TEXT, font=FONT_TITLE
         ).pack(side="left")
 
         tk.Button(
@@ -380,9 +353,8 @@ class AuthApp(tk.Tk):
                 return
             try:
                 self.api.change_password(old, new, conf)
-                fields["old_password"].delete(0, "end")
-                fields["new_password"].delete(0, "end")
-                fields["new_password_confirm"].delete(0, "end")
+                for k in ("old_password", "new_password", "new_password_confirm"):
+                    fields[k].delete(0, "end")
                 self._ok("Password changed.")
             except APIError as err:
                 self._error(str(err))
@@ -393,25 +365,155 @@ class AuthApp(tk.Tk):
         self._button(frame, "Change password", change_pass, primary=False)
 
     def _build_data(self, parent):
-        frame = tk.Frame(parent, bg=CARD, padx=16, pady=32)
+        """Custom model UI — Notes CRUD."""
+        frame = tk.Frame(parent, bg=CARD, padx=8, pady=12)
         frame.pack(fill="both", expand=True)
 
-        tk.Label(
-            frame,
-            text="Your custom model",
-            bg=CARD,
-            fg=MUTED,
-            font=FONT_TITLE,
-        ).pack(expand=True)
+        self._label(frame, "My notes (custom model)", font=FONT_BOLD).pack(fill="x")
 
-        tk.Label(
+        # listbox
+        list_frame = tk.Frame(frame, bg=CARD)
+        list_frame.pack(fill="both", expand=True, pady=(8, 8))
+
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side="right", fill="y")
+
+        self.notes_list = tk.Listbox(
+            list_frame,
+            bg=ENTRY_BG,
+            fg=TEXT,
+            selectbackground=ACCENT,
+            selectforeground=BG,
+            relief="flat",
+            font=FONT,
+            highlightthickness=0,
+            yscrollcommand=scrollbar.set,
+        )
+        self.notes_list.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.notes_list.yview)
+
+        # form
+        self._label(frame, "Title").pack(fill="x")
+        title_entry = self._entry(frame)
+
+        self._label(frame, "Body").pack(fill="x")
+        body_entry = tk.Text(
             frame,
-            text="Placeholder for your business data.\nAdd models & endpoints later.",
-            bg=CARD,
-            fg=MUTED,
-            font=FONT_SMALL,
-            justify="center",
-        ).pack()
+            height=3,
+            bg=ENTRY_BG,
+            fg=TEXT,
+            insertbackground=TEXT,
+            relief="flat",
+            font=FONT,
+            highlightthickness=1,
+            highlightbackground=MUTED,
+            highlightcolor=ACCENT,
+        )
+        body_entry.pack(fill="x", pady=(2, 12))
+
+        def refresh_list():
+            self.notes_list.delete(0, "end")
+            try:
+                self._notes = self.api.list_notes() or []
+            except APIError as err:
+                self._error(str(err))
+                self._notes = []
+                return
+            except (requests.ConnectionError, requests.Timeout):
+                self._error("Cannot reach the server.")
+                self._notes = []
+                return
+            for n in self._notes:
+                self.notes_list.insert("end", n.get("title", "(no title)"))
+
+        def on_select(_event=None):
+            sel = self.notes_list.curselection()
+            if not sel:
+                return
+            note = self._notes[sel[0]]
+            title_entry.delete(0, "end")
+            title_entry.insert(0, note.get("title", ""))
+            body_entry.delete("1.0", "end")
+            body_entry.insert("1.0", note.get("body", ""))
+
+        self.notes_list.bind("<<ListboxSelect>>", on_select)
+
+        def do_add():
+            title = title_entry.get().strip()
+            body = body_entry.get("1.0", "end").strip()
+            if not title:
+                self._error("Title is required.")
+                return
+            try:
+                self.api.create_note(title, body)
+                title_entry.delete(0, "end")
+                body_entry.delete("1.0", "end")
+                refresh_list()
+            except APIError as err:
+                self._error(str(err))
+            except (requests.ConnectionError, requests.Timeout):
+                self._error("Cannot reach the server.")
+
+        def do_update():
+            sel = self.notes_list.curselection()
+            if not sel:
+                self._error("Select a note first.")
+                return
+            note = self._notes[sel[0]]
+            title = title_entry.get().strip()
+            body = body_entry.get("1.0", "end").strip()
+            if not title:
+                self._error("Title is required.")
+                return
+            try:
+                self.api.update_note(note["id"], title, body)
+                refresh_list()
+                self._ok("Note updated.")
+            except APIError as err:
+                self._error(str(err))
+            except (requests.ConnectionError, requests.Timeout):
+                self._error("Cannot reach the server.")
+
+        def do_delete():
+            sel = self.notes_list.curselection()
+            if not sel:
+                self._error("Select a note first.")
+                return
+            note = self._notes[sel[0]]
+            if not messagebox.askyesno("Delete", f"Delete «{note.get('title')}»?", parent=self):
+                return
+            try:
+                self.api.delete_note(note["id"])
+                title_entry.delete(0, "end")
+                body_entry.delete("1.0", "end")
+                refresh_list()
+            except APIError as err:
+                self._error(str(err))
+            except (requests.ConnectionError, requests.Timeout):
+                self._error("Cannot reach the server.")
+
+        btn_row = tk.Frame(frame, bg=CARD)
+        btn_row.pack(fill="x")
+
+        for text, cmd, primary in [
+            ("Add", do_add, True),
+            ("Update", do_update, False),
+            ("Delete", do_delete, False),
+        ]:
+            tk.Button(
+                btn_row,
+                text=text,
+                command=cmd,
+                bg=ACCENT if primary else ENTRY_BG,
+                fg=BG if primary else TEXT,
+                relief="flat",
+                font=FONT_BOLD,
+                cursor="hand2",
+                padx=12,
+                pady=6,
+            ).pack(side="left", padx=(0, 6))
+
+        refresh_list()
 
     def _logout(self):
         try:
@@ -423,6 +525,5 @@ class AuthApp(tk.Tk):
 
 
 if __name__ == "__main__":
-    # Change host/port if your Django server is elsewhere
     app = AuthApp(api_base="http://127.0.0.1:8000/api")
     app.mainloop()
