@@ -8,6 +8,7 @@ Forms match the wireframe:
 
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -35,8 +36,8 @@ class AuthApp(tk.Tk):
     def __init__(self, api_base: str = "http://127.0.0.1:8000/api"):
         super().__init__()
         self.title("Auth Desktop")
-        self.geometry("420x620")
-        self.minsize(380, 560)
+        self.geometry("440x700")
+        self.minsize(400, 600)
         self.configure(bg=BG)
 
         self.api = AuthAPI(base_url=api_base)
@@ -71,7 +72,7 @@ class AuthApp(tk.Tk):
             w.destroy()
 
     def _card(self, parent) -> tk.Frame:
-        f = tk.Frame(parent, bg=CARD, padx=24, pady=20)
+        f = tk.Frame(parent, bg=CARD, padx=20, pady=16)
         f.pack(fill="both", expand=True)
         return f
 
@@ -100,7 +101,7 @@ class AuthApp(tk.Tk):
         )
         if show is not None:
             e.configure(show=show)
-        e.pack(fill="x", ipady=8, pady=(2, 12))
+        e.pack(fill="x", ipady=6, pady=(2, 10))
         return e
 
     def _button(self, parent, text: str, command, primary: bool = True) -> tk.Button:
@@ -136,6 +137,35 @@ class AuthApp(tk.Tk):
         lbl.bind("<Button-1>", lambda _e: command())
         return lbl
 
+    def _bind_mousewheel(self, canvas: tk.Canvas):
+        """Enable scroll with mouse wheel / trackpad (macOS + others)."""
+
+        def on_mousewheel(event):
+            # macOS: event.delta is small ints; Windows: multiples of 120
+            if sys.platform == "darwin":
+                canvas.yview_scroll(-1 * event.delta, "units")
+            else:
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def on_linux_up(_event):
+            canvas.yview_scroll(-1, "units")
+
+        def on_linux_down(_event):
+            canvas.yview_scroll(1, "units")
+
+        def bind_to(_widget):
+            canvas.bind_all("<MouseWheel>", on_mousewheel)
+            canvas.bind_all("<Button-4>", on_linux_up)
+            canvas.bind_all("<Button-5>", on_linux_down)
+
+        def unbind(_widget):
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+
+        canvas.bind("<Enter>", bind_to)
+        canvas.bind("<Leave>", unbind)
+
     def _error(self, msg: str):
         messagebox.showerror("Error", msg, parent=self)
 
@@ -149,7 +179,7 @@ class AuthApp(tk.Tk):
 
     def show_auth(self):
         self._clear()
-        self.geometry("420x640")
+        self.geometry("440x700")
 
         tk.Label(
             self.container, text="Welcome", bg=BG, fg=TEXT, font=FONT_TITLE
@@ -211,19 +241,29 @@ class AuthApp(tk.Tk):
         self._link(frame, "Forgot password?", do_forgot)
 
     def _build_register(self, parent):
-        canvas = tk.Canvas(parent, bg=CARD, highlightthickness=0)
-        scroll = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        outer = tk.Frame(parent, bg=CARD)
+        outer.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(outer, bg=CARD, highlightthickness=0)
+        scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
         frame = tk.Frame(canvas, bg=CARD, padx=8, pady=12)
 
-        frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
-        )
-        canvas.create_window((0, 0), window=frame, anchor="nw")
+        window_id = canvas.create_window((0, 0), window=frame, anchor="nw")
+
+        def _on_frame_configure(_event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(window_id, width=event.width)
+
+        frame.bind("<Configure>", _on_frame_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
         canvas.configure(yscrollcommand=scroll.set)
 
         canvas.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
+
+        self._bind_mousewheel(canvas)
 
         fields = {}
         for key, label, show in [
@@ -265,7 +305,7 @@ class AuthApp(tk.Tk):
 
     def show_main(self):
         self._clear()
-        self.geometry("480x640")
+        self.geometry("480x700")
 
         header = tk.Frame(self.container, bg=BG)
         header.pack(fill="x", pady=(0, 12))
@@ -303,8 +343,27 @@ class AuthApp(tk.Tk):
         self._build_data(data_tab)
 
     def _build_profile(self, parent):
-        frame = tk.Frame(parent, bg=CARD, padx=8, pady=16)
-        frame.pack(fill="both", expand=True)
+        outer = tk.Frame(parent, bg=CARD)
+        outer.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(outer, bg=CARD, highlightthickness=0)
+        scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        frame = tk.Frame(canvas, bg=CARD, padx=8, pady=12)
+
+        window_id = canvas.create_window((0, 0), window=frame, anchor="nw")
+
+        def _on_frame_configure(_event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(window_id, width=event.width)
+
+        frame.bind("<Configure>", _on_frame_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        self._bind_mousewheel(canvas)
 
         try:
             profile = self.api.me()
@@ -365,13 +424,11 @@ class AuthApp(tk.Tk):
         self._button(frame, "Change password", change_pass, primary=False)
 
     def _build_data(self, parent):
-        """Custom model UI — Notes CRUD."""
         frame = tk.Frame(parent, bg=CARD, padx=8, pady=12)
         frame.pack(fill="both", expand=True)
 
         self._label(frame, "My notes (custom model)", font=FONT_BOLD).pack(fill="x")
 
-        # listbox
         list_frame = tk.Frame(frame, bg=CARD)
         list_frame.pack(fill="both", expand=True, pady=(8, 8))
 
@@ -392,7 +449,6 @@ class AuthApp(tk.Tk):
         self.notes_list.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.notes_list.yview)
 
-        # form
         self._label(frame, "Title").pack(fill="x")
         title_entry = self._entry(frame)
 
@@ -480,7 +536,9 @@ class AuthApp(tk.Tk):
                 self._error("Select a note first.")
                 return
             note = self._notes[sel[0]]
-            if not messagebox.askyesno("Delete", f"Delete «{note.get('title')}»?", parent=self):
+            if not messagebox.askyesno(
+                "Delete", f"Delete «{note.get('title')}»?", parent=self
+            ):
                 return
             try:
                 self.api.delete_note(note["id"])
