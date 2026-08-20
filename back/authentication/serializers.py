@@ -10,6 +10,22 @@ User = get_user_model()
 token_generator = PasswordResetTokenGenerator()
 
 
+class UserSerializer(serializers.ModelSerializer):
+    """Public profile of the authenticated user."""
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "email",
+            "username",
+            "first_name",
+            "last_name",
+            "date_joined",
+        )
+        read_only_fields = fields
+
+
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True,
