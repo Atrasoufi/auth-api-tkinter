@@ -4,6 +4,8 @@ Desktop auth client (tkinter) for the Django scenario_django API.
 
 from __future__ import annotations
 
+import re
+import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -25,6 +27,25 @@ FONT_BOLD = ("Segoe UI", 10, "bold")
 FONT_TITLE = ("Segoe UI", 15, "bold")
 FONT_SMALL = ("Segoe UI", 9)
 
+EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+PHONE_RE = re.compile(r"^[+\d][\d\s\-]{6,20}$")
+
+
+def valid_email(value: str) -> bool:
+    return bool(EMAIL_RE.match(value))
+
+
+def valid_password(value: str) -> str | None:
+    if len(value) < 8:
+        return "Password must be at least 8 characters."
+    return None
+
+
+def valid_phone(value: str) -> bool:
+    if not value:
+        return True
+    return bool(PHONE_RE.match(value))
+
 
 class AuthApp(tk.Tk):
     def __init__(self, api_base: str = "http://127.0.0.1:8000/api"):
@@ -37,10 +58,19 @@ class AuthApp(tk.Tk):
         self.api = AuthAPI(base_url=api_base)
         self.current_user: dict | None = None
         self._notes: list[dict] = []
+        self._notes_page = 1
+        self._notes_total_pages = 1
+        self._notes_search = ""
+        self._busy = False
 
         self._setup_styles()
         self.container = tk.Frame(self, bg=BG)
         self.container.pack(fill="both", expand=True, padx=16, pady=16)
+
+        self.status = tk.Label(
+            self, text="", bg=BG, fg=MUTED, font=FONT_SMALL, anchor="w"
+        )
+        self.status.pack(fill="x", padx=16, pady=(0, 8))
 
         self.show_auth()
 
@@ -126,14 +156,53 @@ class AuthApp(tk.Tk):
         lbl.bind("<Button-1>", lambda _e: command())
         return lbl
 
+    def _set_status(self, text: str):
+        self.status.configure(text=text)
+
     def _error(self, msg: str):
+        self._set_status("")
         messagebox.showerror("Error", msg, parent=self)
 
     def _info(self, msg: str):
+        self._set_status("")
         messagebox.showinfo("Info", msg, parent=self)
 
     def _ok(self, msg: str):
+        self._set_status("")
         messagebox.showinfo("Success", msg, parent=self)
+
+    def _run_async(self, work, on_ok=None, on_err=None, loading_msg: str = "Loading…"):
+        """Run blocking API call off the UI thread; re-enable after."""
+        if self._busy:
+            return
+        self._busy = True
+        self._set_status(loading_msg)
+
+        def worker():
+            try:
+                result = work()
+            except Exception as exc:
+                self.after(0, lambda: self._finish_async(err=exc, on_err=on_err))
+            else:
+                self.after(0, lambda: self._finish_async(result=result, on_ok=on_ok))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_async(self, result=None, err=None, on_ok=None, on_err=None):
+        self._busy = False
+        self._set_status("")
+        if err is not None:
+            if on_err:
+                on_err(err)
+            elif isinstance(err, APIError):
+                self._error(str(err))
+            elif isinstance(err, (requests.ConnectionError, requests.Timeout)):
+                self._error("Cannot reach the server. Is runserver running?")
+            else:
+                self._error(str(err))
+            return
+        if on_ok:
+            on_ok(result)
 
     # ---- Auth ----
 
@@ -173,15 +242,19 @@ class AuthApp(tk.Tk):
             if not e or not p:
                 self._error("Email and password are required.")
                 return
-            try:
-                data = self.api.login(e, p)
+            if not valid_email(e):
+                self._error("Enter a valid email address.")
+                return
+
+            def work():
+                return self.api.login(e, p)
+
+            def ok(data):
                 self.current_user = data.get("user") or self.api.me()
                 self._ok("Logged in successfully.")
                 self.show_main()
-            except APIError as err:
-                self._error(str(err))
-            except (requests.ConnectionError, requests.Timeout):
-                self._error("Cannot reach the server. Is runserver running?")
+
+            self._run_async(work, on_ok=ok, loading_msg="Logging in…")
 
         self._button(frame, "Login", do_login)
 
@@ -190,18 +263,21 @@ class AuthApp(tk.Tk):
             if not e:
                 self._error("Enter your email first, then click Forgot password.")
                 return
-            try:
-                res = self.api.password_reset_request(e)
+            if not valid_email(e):
+                self._error("Enter a valid email address.")
+                return
+
+            def work():
+                return self.api.password_reset_request(e)
+
+            def ok(res):
                 self._info(res.get("message", "Check your email / server console."))
-            except APIError as err:
-                self._error(str(err))
-            except (requests.ConnectionError, requests.Timeout):
-                self._error("Cannot reach the server.")
+
+            self._run_async(work, on_ok=ok, loading_msg="Sending reset email…")
 
         self._link(frame, "Forgot password?", do_forgot)
 
     def _build_register(self, parent):
-        # Compact form — everything visible, no canvas/scroll
         frame = tk.Frame(parent, bg=CARD, padx=8, pady=8)
         frame.pack(fill="both", expand=True)
 
@@ -225,19 +301,33 @@ class AuthApp(tk.Tk):
                 else v.get()
                 for k, v in fields.items()
             }
-            if not data["email"] or not data["username"] or not data["password"]:
-                self._error("Email, username and password are required.")
+            if not data["username"]:
+                self._error("Username is required.")
+                return
+            if len(data["username"]) < 3:
+                self._error("Username must be at least 3 characters.")
+                return
+            if not data["email"] or not valid_email(data["email"]):
+                self._error("Enter a valid email address.")
+                return
+            pwd_err = valid_password(data["password"])
+            if pwd_err:
+                self._error(pwd_err)
                 return
             if data["password"] != data["password_confirm"]:
                 self._error("Passwords do not match.")
                 return
-            try:
-                self.api.register(**data)
+            if not valid_phone(data["phone"]):
+                self._error("Phone looks invalid (use digits, optional +).")
+                return
+
+            def work():
+                return self.api.register(**data)
+
+            def ok(_):
                 self._ok("Registration successful. You can log in now.")
-            except APIError as err:
-                self._error(str(err))
-            except (requests.ConnectionError, requests.Timeout):
-                self._error("Cannot reach the server.")
+
+            self._run_async(work, on_ok=ok, loading_msg="Registering…")
 
         self._button(frame, "Register", do_register)
 
@@ -245,7 +335,9 @@ class AuthApp(tk.Tk):
 
     def show_main(self):
         self._clear()
-        self.geometry("420x700")
+        self.geometry("420x720")
+        self._notes_page = 1
+        self._notes_search = ""
 
         header = tk.Frame(self.container, bg=BG)
         header.pack(fill="x", pady=(0, 8))
@@ -308,18 +400,23 @@ class AuthApp(tk.Tk):
             fields[key] = entry
 
         def save_profile():
-            try:
-                updated = self.api.update_profile(
+            phone = fields["phone"].get().strip()
+            if not valid_phone(phone):
+                self._error("Phone looks invalid (use digits, optional +).")
+                return
+
+            def work():
+                return self.api.update_profile(
                     first_name=fields["first_name"].get().strip(),
                     last_name=fields["last_name"].get().strip(),
-                    phone=fields["phone"].get().strip(),
+                    phone=phone,
                 )
+
+            def ok(updated):
                 self.current_user = updated
                 self._ok("Profile updated.")
-            except APIError as err:
-                self._error(str(err))
-            except (requests.ConnectionError, requests.Timeout):
-                self._error("Cannot reach the server.")
+
+            self._run_async(work, on_ok=ok, loading_msg="Saving profile…")
 
         def change_pass():
             old = fields["old_password"].get()
@@ -328,18 +425,23 @@ class AuthApp(tk.Tk):
             if not old or not new:
                 self._error("Current and new password are required.")
                 return
+            pwd_err = valid_password(new)
+            if pwd_err:
+                self._error(pwd_err)
+                return
             if new != conf:
                 self._error("New passwords do not match.")
                 return
-            try:
-                self.api.change_password(old, new, conf)
+
+            def work():
+                return self.api.change_password(old, new, conf)
+
+            def ok(_):
                 for k in ("old_password", "new_password", "new_password_confirm"):
                     fields[k].delete(0, "end")
                 self._ok("Password changed.")
-            except APIError as err:
-                self._error(str(err))
-            except (requests.ConnectionError, requests.Timeout):
-                self._error("Cannot reach the server.")
+
+            self._run_async(work, on_ok=ok, loading_msg="Changing password…")
 
         self._button(frame, "Save profile", save_profile)
         self._button(frame, "Change password", change_pass, primary=False)
@@ -350,13 +452,31 @@ class AuthApp(tk.Tk):
 
         self._label(frame, "My notes", font=FONT_BOLD).pack(fill="x")
 
+        # search row
+        search_row = tk.Frame(frame, bg=CARD)
+        search_row.pack(fill="x", pady=(4, 4))
+
+        search_entry = tk.Entry(
+            search_row,
+            bg=ENTRY_BG,
+            fg=TEXT,
+            insertbackground=TEXT,
+            relief="flat",
+            font=FONT,
+            highlightthickness=1,
+            highlightbackground=MUTED,
+            highlightcolor=ACCENT,
+        )
+        search_entry.pack(side="left", fill="x", expand=True, ipady=4)
+
+        # list
         list_frame = tk.Frame(frame, bg=CARD)
-        list_frame.pack(fill="both", expand=True, pady=(6, 6))
+        list_frame.pack(fill="both", expand=True, pady=(4, 4))
 
         scrollbar = tk.Scrollbar(list_frame)
         scrollbar.pack(side="right", fill="y")
 
-        self.notes_list = tk.Listbox(
+        notes_list = tk.Listbox(
             list_frame,
             bg=ENTRY_BG,
             fg=TEXT,
@@ -366,11 +486,16 @@ class AuthApp(tk.Tk):
             font=FONT,
             highlightthickness=0,
             yscrollcommand=scrollbar.set,
-            height=6,
+            height=5,
         )
-        self.notes_list.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=self.notes_list.yview)
+        notes_list.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=notes_list.yview)
+        self.notes_list = notes_list
 
+        page_lbl = tk.Label(frame, text="", bg=CARD, fg=MUTED, font=FONT_SMALL)
+        page_lbl.pack(fill="x")
+
+        # form
         self._label(frame, "Title").pack(fill="x")
         title_entry = self._entry(frame)
 
@@ -390,22 +515,89 @@ class AuthApp(tk.Tk):
         body_entry.pack(fill="x", pady=(1, 6))
 
         def refresh_list():
-            self.notes_list.delete(0, "end")
-            try:
-                self._notes = self.api.list_notes() or []
-            except APIError as err:
-                self._error(str(err))
-                self._notes = []
-                return
-            except (requests.ConnectionError, requests.Timeout):
-                self._error("Cannot reach the server.")
-                self._notes = []
-                return
-            for n in self._notes:
-                self.notes_list.insert("end", n.get("title", "(no title)"))
+            def work():
+                return self.api.list_notes(
+                    search=self._notes_search,
+                    page=self._notes_page,
+                    page_size=10,
+                )
+
+            def ok(payload):
+                # support both old list and new paginated dict
+                if isinstance(payload, list):
+                    self._notes = payload
+                    self._notes_total_pages = 1
+                    count = len(payload)
+                else:
+                    self._notes = payload.get("results") or []
+                    self._notes_page = payload.get("page", 1)
+                    self._notes_total_pages = payload.get("total_pages", 1)
+                    count = payload.get("count", 0)
+
+                notes_list.delete(0, "end")
+                for n in self._notes:
+                    notes_list.insert("end", n.get("title", "(no title)"))
+                page_lbl.configure(
+                    text=f"Page {self._notes_page}/{self._notes_total_pages}  ·  {count} total"
+                )
+
+            self._run_async(work, on_ok=ok, loading_msg="Loading notes…")
+
+        def do_search():
+            self._notes_search = search_entry.get().strip()
+            self._notes_page = 1
+            refresh_list()
+
+        def prev_page():
+            if self._notes_page > 1:
+                self._notes_page -= 1
+                refresh_list()
+
+        def next_page():
+            if self._notes_page < self._notes_total_pages:
+                self._notes_page += 1
+                refresh_list()
+
+        tk.Button(
+            search_row,
+            text="Search",
+            command=do_search,
+            bg=ACCENT,
+            fg=BG,
+            relief="flat",
+            font=FONT_BOLD,
+            cursor="hand2",
+            padx=8,
+            pady=3,
+        ).pack(side="left", padx=(6, 0))
+
+        nav = tk.Frame(frame, bg=CARD)
+        nav.pack(fill="x", pady=(0, 4))
+        tk.Button(
+            nav,
+            text="◀ Prev",
+            command=prev_page,
+            bg=ENTRY_BG,
+            fg=TEXT,
+            relief="flat",
+            font=FONT_SMALL,
+            cursor="hand2",
+            padx=6,
+        ).pack(side="left")
+        tk.Button(
+            nav,
+            text="Next ▶",
+            command=next_page,
+            bg=ENTRY_BG,
+            fg=TEXT,
+            relief="flat",
+            font=FONT_SMALL,
+            cursor="hand2",
+            padx=6,
+        ).pack(side="left", padx=(6, 0))
 
         def on_select(_event=None):
-            sel = self.notes_list.curselection()
+            sel = notes_list.curselection()
             if not sel:
                 return
             note = self._notes[sel[0]]
@@ -414,7 +606,7 @@ class AuthApp(tk.Tk):
             body_entry.delete("1.0", "end")
             body_entry.insert("1.0", note.get("body", ""))
 
-        self.notes_list.bind("<<ListboxSelect>>", on_select)
+        notes_list.bind("<<ListboxSelect>>", on_select)
 
         def do_add():
             title = title_entry.get().strip()
@@ -422,18 +614,23 @@ class AuthApp(tk.Tk):
             if not title:
                 self._error("Title is required.")
                 return
-            try:
-                self.api.create_note(title, body)
+            if len(title) > 200:
+                self._error("Title max 200 characters.")
+                return
+
+            def work():
+                return self.api.create_note(title, body)
+
+            def ok(_):
                 title_entry.delete(0, "end")
                 body_entry.delete("1.0", "end")
+                self._notes_page = 1
                 refresh_list()
-            except APIError as err:
-                self._error(str(err))
-            except (requests.ConnectionError, requests.Timeout):
-                self._error("Cannot reach the server.")
+
+            self._run_async(work, on_ok=ok, loading_msg="Adding note…")
 
         def do_update():
-            sel = self.notes_list.curselection()
+            sel = notes_list.curselection()
             if not sel:
                 self._error("Select a note first.")
                 return
@@ -443,17 +640,18 @@ class AuthApp(tk.Tk):
             if not title:
                 self._error("Title is required.")
                 return
-            try:
-                self.api.update_note(note["id"], title, body)
-                refresh_list()
+
+            def work():
+                return self.api.update_note(note["id"], title, body)
+
+            def ok(_):
                 self._ok("Note updated.")
-            except APIError as err:
-                self._error(str(err))
-            except (requests.ConnectionError, requests.Timeout):
-                self._error("Cannot reach the server.")
+                refresh_list()
+
+            self._run_async(work, on_ok=ok, loading_msg="Updating…")
 
         def do_delete():
-            sel = self.notes_list.curselection()
+            sel = notes_list.curselection()
             if not sel:
                 self._error("Select a note first.")
                 return
@@ -462,15 +660,16 @@ class AuthApp(tk.Tk):
                 "Delete", f"Delete «{note.get('title')}»?", parent=self
             ):
                 return
-            try:
-                self.api.delete_note(note["id"])
+
+            def work():
+                return self.api.delete_note(note["id"])
+
+            def ok(_):
                 title_entry.delete(0, "end")
                 body_entry.delete("1.0", "end")
                 refresh_list()
-            except APIError as err:
-                self._error(str(err))
-            except (requests.ConnectionError, requests.Timeout):
-                self._error("Cannot reach the server.")
+
+            self._run_async(work, on_ok=ok, loading_msg="Deleting…")
 
         btn_row = tk.Frame(frame, bg=CARD)
         btn_row.pack(fill="x")
@@ -493,6 +692,7 @@ class AuthApp(tk.Tk):
                 pady=5,
             ).pack(side="left", padx=(0, 6))
 
+        search_entry.bind("<Return>", lambda _e: do_search())
         refresh_list()
 
     def _logout(self):
