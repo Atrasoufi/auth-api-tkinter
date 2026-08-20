@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "users",
     "authentication",
@@ -128,13 +129,13 @@ STATIC_URL = 'static/'
 
 
 # Email
-# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
+# In development emails are printed to the console.
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = "noreply@example.com"
 
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
+# Frontend base URL used for password-reset links
+FRONTEND_URL = "http://localhost:5173"
+
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -144,7 +145,6 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.AllowAny",
     ),
 }
-
 
 
 SIMPLE_JWT = {
