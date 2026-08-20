@@ -13,6 +13,8 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+import requests
+
 from api_client import APIError, AuthAPI
 
 # ---------------------------------------------------------------------------
@@ -209,7 +211,7 @@ class AuthApp(tk.Tk):
                 self.show_main()
             except APIError as err:
                 self._error(str(err))
-            except requests_error():
+            except (requests.ConnectionError, requests.Timeout):
                 self._error("Cannot reach the server. Is runserver running?")
 
         self._button(frame, "Login", do_login)
@@ -224,13 +226,12 @@ class AuthApp(tk.Tk):
                 self._info(res.get("message", "Check your email / server console."))
             except APIError as err:
                 self._error(str(err))
-            except Exception:
+            except (requests.ConnectionError, requests.Timeout):
                 self._error("Cannot reach the server.")
 
         self._link(frame, "Forgot password?", do_forgot)
 
     def _build_register(self, parent):
-        # scrollable for smaller screens
         canvas = tk.Canvas(parent, bg=CARD, highlightthickness=0)
         scroll = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
         frame = tk.Frame(canvas, bg=CARD, padx=8, pady=12)
@@ -259,8 +260,12 @@ class AuthApp(tk.Tk):
             fields[key] = self._entry(frame, show=show)
 
         def do_register():
-            data = {k: v.get().strip() if k != "password" and k != "password_confirm" else v.get()
-                    for k, v in fields.items()}
+            data = {
+                k: v.get().strip()
+                if k not in ("password", "password_confirm")
+                else v.get()
+                for k, v in fields.items()
+            }
             if not data["email"] or not data["username"] or not data["password"]:
                 self._error("Email, username and password are required.")
                 return
@@ -272,7 +277,7 @@ class AuthApp(tk.Tk):
                 self._ok("Registration successful. You can log in now.")
             except APIError as err:
                 self._error(str(err))
-            except Exception:
+            except (requests.ConnectionError, requests.Timeout):
                 self._error("Cannot reach the server.")
 
         self._button(frame, "Register", do_register)
@@ -288,7 +293,9 @@ class AuthApp(tk.Tk):
         header = tk.Frame(self.container, bg=BG)
         header.pack(fill="x", pady=(0, 12))
 
-        user_label = self.current_user.get("email", "User") if self.current_user else "User"
+        user_label = (
+            self.current_user.get("email", "User") if self.current_user else "User"
+        )
         tk.Label(
             header,
             text=f"Hi, {user_label}",
@@ -326,7 +333,6 @@ class AuthApp(tk.Tk):
         frame = tk.Frame(parent, bg=CARD, padx=8, pady=16)
         frame.pack(fill="both", expand=True)
 
-        # load latest profile
         try:
             profile = self.api.me()
             self.current_user = profile
@@ -359,7 +365,7 @@ class AuthApp(tk.Tk):
                 self._ok("Profile updated.")
             except APIError as err:
                 self._error(str(err))
-            except Exception:
+            except (requests.ConnectionError, requests.Timeout):
                 self._error("Cannot reach the server.")
 
         def change_pass():
@@ -380,7 +386,7 @@ class AuthApp(tk.Tk):
                 self._ok("Password changed.")
             except APIError as err:
                 self._error(str(err))
-            except Exception:
+            except (requests.ConnectionError, requests.Timeout):
                 self._error("Cannot reach the server.")
 
         self._button(frame, "Save profile", save_profile)
@@ -414,13 +420,6 @@ class AuthApp(tk.Tk):
             pass
         self.current_user = None
         self.show_auth()
-
-
-def requests_error():
-    """Used in except clauses for network failures."""
-    import requests
-
-    return (requests.ConnectionError, requests.Timeout)
 
 
 if __name__ == "__main__":
