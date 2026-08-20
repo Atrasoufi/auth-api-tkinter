@@ -20,12 +20,19 @@ class RegisterAPITestCase(APITestCase):
             "username": "atra",
             "password": "StrongPassword123!",
             "password_confirm": "StrongPassword123!",
+            "first_name": "Atra",
+            "last_name": "Soufi",
+            "phone": "09120000000",
         }
 
         response = self.client.post(self.url, payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(User.objects.filter(email="atra@example.com").exists())
+        user = User.objects.get(email="atra@example.com")
+        self.assertEqual(user.first_name, "Atra")
+        self.assertEqual(user.last_name, "Soufi")
+        self.assertEqual(user.phone, "09120000000")
+        self.assertEqual(response.data["user"]["phone"], "09120000000")
 
     def test_duplicate_email_is_rejected(self):
         User.objects.create_user(
@@ -123,6 +130,7 @@ class MeAPITestCase(APITestCase):
             password="StrongPassword123!",
             first_name="Atra",
             last_name="Soufi",
+            phone="09120000000",
         )
         refresh = RefreshToken.for_user(self.user)
         self.client.credentials(
@@ -137,8 +145,26 @@ class MeAPITestCase(APITestCase):
         self.assertEqual(response.data["username"], "atra")
         self.assertEqual(response.data["first_name"], "Atra")
         self.assertEqual(response.data["last_name"], "Soufi")
+        self.assertEqual(response.data["phone"], "09120000000")
         self.assertIn("id", response.data)
         self.assertIn("date_joined", response.data)
+
+    def test_user_can_update_profile(self):
+        payload = {
+            "first_name": "NewName",
+            "last_name": "NewLast",
+            "phone": "09350000000",
+        }
+        response = self.client.patch(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["first_name"], "NewName")
+        self.assertEqual(response.data["last_name"], "NewLast")
+        self.assertEqual(response.data["phone"], "09350000000")
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, "NewName")
+        self.assertEqual(self.user.phone, "09350000000")
 
     def test_unauthenticated_user_cannot_get_profile(self):
         self.client.credentials()
@@ -207,7 +233,7 @@ class PasswordResetAPITestCase(APITestCase):
 
         email = mail.outbox[0]
         self.assertIn("Password Reset", email.subject)
-        self.assertTrue(email.alternatives)  # HTML part attached
+        self.assertTrue(email.alternatives)
         html_body, content_type = email.alternatives[0]
         self.assertEqual(content_type, "text/html")
         self.assertIn("Reset Password", html_body)
