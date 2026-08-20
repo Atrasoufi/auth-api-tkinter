@@ -11,7 +11,7 @@ token_generator = PasswordResetTokenGenerator()
 
 
 class UserSerializer(serializers.ModelSerializer):
-    """Public profile of the authenticated user."""
+    """Read profile of the authenticated user."""
 
     class Meta:
         model = User
@@ -21,9 +21,22 @@ class UserSerializer(serializers.ModelSerializer):
             "username",
             "first_name",
             "last_name",
+            "phone",
             "date_joined",
         )
         read_only_fields = fields
+
+
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    """Update editable profile fields (PATCH /api/auth/me/)."""
+
+    class Meta:
+        model = User
+        fields = (
+            "first_name",
+            "last_name",
+            "phone",
+        )
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -43,7 +56,15 @@ class RegisterSerializer(serializers.ModelSerializer):
             "username",
             "password",
             "password_confirm",
+            "first_name",
+            "last_name",
+            "phone",
         )
+        extra_kwargs = {
+            "first_name": {"required": False, "allow_blank": True},
+            "last_name": {"required": False, "allow_blank": True},
+            "phone": {"required": False, "allow_blank": True},
+        }
 
     def validate_email(self, value):
         email = value.strip().lower()
@@ -84,6 +105,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             "id": self.user.id,
             "email": self.user.email,
             "username": self.user.username,
+            "first_name": self.user.first_name,
+            "last_name": self.user.last_name,
+            "phone": self.user.phone,
         }
         return data
 
