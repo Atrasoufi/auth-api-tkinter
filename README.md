@@ -1,108 +1,179 @@
-# scenario_django
+# auth-api-tkinter
 
-Django REST API + tkinter desktop client for authentication.
+Django REST API (JWT auth) + **tkinter** desktop client.
+
+Features:
+
+- Register / Login (email) / Logout
+- Profile (`GET`/`PATCH` me)
+- Change password & password-reset (HTML email, rate-limited)
+- Custom model **Notes** with search + pagination
+- Desktop UI with form validation and non-blocking loading states
+- Docker Compose (Django + Postgres) or local SQLite
+
+> GitHub repo name: rename to **`auth-api-tkinter`** if you have not already  
+> (Settings → General → Repository name)
+
+---
 
 ## Structure
 
 ```
-scenario_django/
-├── back/                 # Django backend (API)
-│   ├── authentication/   # register, login, logout, me, change/reset password
-│   ├── users/            # custom User model (email login + phone)
-│   └── config/           # settings, urls
-├── desktop/              # tkinter desktop app
+auth-api-tkinter/
+├── back/                      # Django project
+│   ├── authentication/        # auth endpoints + tests
+│   ├── notes/                 # Note CRUD (search, pagination)
+│   ├── users/                 # custom User (email + phone)
+│   └── config/                # settings, urls
+├── desktop/                   # tkinter client
+│   ├── app.py
+│   ├── api_client.py
+│   └── requirements.txt
 ├── docker/
-│   └── entrypoint.sh
+│   └── entrypoint.sh          # wait for DB → migrate → run
 ├── Dockerfile
 ├── docker-compose.yml
 ├── .env.example
-└── requirements.txt
+├── requirements.txt
+└── LICENSE                    # MIT
 ```
 
-## Quick start with Docker (recommended)
+---
+
+## Quick start (Docker)
 
 ```bash
-cp .env.example .env
+git clone https://github.com/Atrasoufi/auth-api-tkinter.git
+cd auth-api-tkinter
+
+# optional: cp .env.example .env
 docker compose up --build
 ```
 
-- API: http://127.0.0.1:8000/api/
-- Health: http://127.0.0.1:8000/api/health/
-- Postgres on port `5432`
+| Service | URL |
+|---------|-----|
+| API | http://127.0.0.1:8000/api/ |
+| Health | http://127.0.0.1:8000/api/health/ |
+| Postgres | `localhost:5432` |
 
-Migrations run automatically on container start.
-
-Useful commands:
+Migrations run on container start.
 
 ```bash
-docker compose up --build -d      # background
-docker compose logs -f web        # API logs
+docker compose logs -f web
 docker compose exec web python manage.py createsuperuser
 docker compose exec web python manage.py test authentication
-docker compose down               # stop
-docker compose down -v            # stop + delete DB volume
+docker compose down          # stop
+docker compose down -v       # stop + wipe DB volume
 ```
+
+---
 
 ## Backend without Docker
 
 ```bash
 cd back
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -r ../requirements.txt
 
-cp ../.env.example ../.env
-# leave POSTGRES_HOST empty → SQLite
+cp ../.env.example ../.env   # leave POSTGRES_HOST empty → SQLite
 
 python manage.py migrate
 python manage.py test authentication
 python manage.py runserver
 ```
 
-API base: `http://127.0.0.1:8000/api/`
-
-### Auth endpoints
-
-| Method | Path | Auth |
-|--------|------|------|
-| `POST` | `/api/auth/register/` | — |
-| `POST` | `/api/auth/login/` | — (body: `email`, `password`) |
-| `POST` | `/api/auth/logout/` | JWT |
-| `POST` | `/api/auth/token/refresh/` | — |
-| `GET` / `PATCH` | `/api/auth/me/` | JWT |
-| `POST` | `/api/auth/change-password/` | JWT |
-| `POST` | `/api/auth/password-reset/` | — |
-| `POST` | `/api/auth/password-reset/confirm/` | — |
-| `GET` | `/api/health/` | — |
-
-Login uses **email** (`USERNAME_FIELD`).
+---
 
 ## Desktop client
-
-Runs on the host (not inside Docker):
 
 ```bash
 cd desktop
 pip install -r requirements.txt
-python app.py
+python app.py                # or python3 app.py
 ```
 
-Needs the API at `http://127.0.0.1:8000/api` (Docker or local `runserver`).
+Requires the API at `http://127.0.0.1:8000/api`.
 
-On Linux: `sudo apt install python3-tk` if tkinter is missing.
+- **Login / Register** tabs (email login)
+- After login: **Profile** + **Data** (notes)
+- Client-side validation (email, password length, phone)
+- Async requests so the UI does not freeze
+- Notes: search, page prev/next
 
-## Environment (`.env`)
+Linux: `sudo apt install python3-tk` if tkinter is missing.
 
-Copy from `.env.example`:
+---
 
-| Variable | Notes |
-|----------|--------|
-| `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` | Django core |
-| `FRONTEND_URL` | Links in password-reset emails |
-| `EMAIL_*` | Empty `EMAIL_HOST` → console backend |
-| `THROTTLE_PASSWORD_RESET` | Default `5/hour` |
-| `POSTGRES_*` | Used by Docker Compose |
+## API reference
+
+Base URL: `/api/`
+
+### Auth
+
+| Method | Path | Auth | Notes |
+|--------|------|------|--------|
+| `POST` | `/auth/register/` | — | email, username, password, … |
+| `POST` | `/auth/login/` | — | body: `email`, `password` → JWT |
+| `POST` | `/auth/logout/` | JWT | blacklist refresh |
+| `POST` | `/auth/token/refresh/` | — | |
+| `GET` / `PATCH` | `/auth/me/` | JWT | profile |
+| `POST` | `/auth/change-password/` | JWT | |
+| `POST` | `/auth/password-reset/` | — | rate-limited |
+| `POST` | `/auth/password-reset/confirm/` | — | |
+| `GET` | `/health/` | — | |
+
+Login field is **email** (`USERNAME_FIELD`).
+
+### Notes (authenticated)
+
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/notes/?search=&page=&page_size=` | paginated list |
+| `POST` | `/notes/` | create `{title, body}` |
+| `GET` | `/notes/<id>/` | detail |
+| `PATCH` | `/notes/<id>/` | update |
+| `DELETE` | `/notes/<id>/` | delete |
+
+Example list response:
+
+```json
+{
+  "count": 42,
+  "page": 1,
+  "page_size": 10,
+  "total_pages": 5,
+  "results": [{ "id": 1, "title": "…", "body": "…", "created_at": "…", "updated_at": "…" }]
+}
+```
+
+---
+
+## Environment
+
+Copy `.env.example` → `.env`:
+
+| Variable | Description |
+|----------|-------------|
+| `SECRET_KEY` | Django secret |
+| `DEBUG` | `True` / `False` |
+| `ALLOWED_HOSTS` | comma-separated |
+| `CORS_ALLOWED_ORIGINS` | comma-separated |
+| `FRONTEND_URL` | links in reset emails |
+| `EMAIL_HOST` | empty → console backend |
+| `THROTTLE_PASSWORD_RESET` | default `5/hour` |
+| `POSTGRES_*` | used by Docker Compose |
+
+---
+
+## Stack
+
+- Python 3.12+, Django 6, DRF, SimpleJWT
+- Postgres 16 (Docker) or SQLite (local)
+- tkinter + requests (desktop)
+
+---
 
 ## License
 
-Private / educational project.
+[MIT](LICENSE) © 2026 Atrasoufi
