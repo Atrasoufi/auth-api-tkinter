@@ -1,14 +1,9 @@
 """
 Desktop auth client (tkinter) for the Django scenario_django API.
-
-Forms match the wireframe:
-  Form 1 — Login / Register tabs
-  Form 2 — Profile / Data tabs (after login)
 """
 
 from __future__ import annotations
 
-import sys
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -24,11 +19,10 @@ TEXT = "#c0caf5"
 MUTED = "#565f89"
 ENTRY_BG = "#1f2335"
 DANGER = "#f7768e"
-SUCCESS = "#9ece6a"
 
-FONT = ("Segoe UI", 11)
-FONT_BOLD = ("Segoe UI", 11, "bold")
-FONT_TITLE = ("Segoe UI", 16, "bold")
+FONT = ("Segoe UI", 10)
+FONT_BOLD = ("Segoe UI", 10, "bold")
+FONT_TITLE = ("Segoe UI", 15, "bold")
 FONT_SMALL = ("Segoe UI", 9)
 
 
@@ -36,8 +30,8 @@ class AuthApp(tk.Tk):
     def __init__(self, api_base: str = "http://127.0.0.1:8000/api"):
         super().__init__()
         self.title("Auth Desktop")
-        self.geometry("440x700")
-        self.minsize(400, 600)
+        self.geometry("400x720")
+        self.minsize(360, 640)
         self.configure(bg=BG)
 
         self.api = AuthAPI(base_url=api_base)
@@ -46,7 +40,7 @@ class AuthApp(tk.Tk):
 
         self._setup_styles()
         self.container = tk.Frame(self, bg=BG)
-        self.container.pack(fill="both", expand=True, padx=20, pady=20)
+        self.container.pack(fill="both", expand=True, padx=16, pady=16)
 
         self.show_auth()
 
@@ -58,7 +52,7 @@ class AuthApp(tk.Tk):
             "TNotebook.Tab",
             background=ENTRY_BG,
             foreground=MUTED,
-            padding=[16, 8],
+            padding=[14, 6],
             font=FONT_BOLD,
         )
         style.map(
@@ -72,7 +66,7 @@ class AuthApp(tk.Tk):
             w.destroy()
 
     def _card(self, parent) -> tk.Frame:
-        f = tk.Frame(parent, bg=CARD, padx=20, pady=16)
+        f = tk.Frame(parent, bg=CARD, padx=16, pady=12)
         f.pack(fill="both", expand=True)
         return f
 
@@ -101,7 +95,7 @@ class AuthApp(tk.Tk):
         )
         if show is not None:
             e.configure(show=show)
-        e.pack(fill="x", ipady=6, pady=(2, 10))
+        e.pack(fill="x", ipady=5, pady=(1, 6))
         return e
 
     def _button(self, parent, text: str, command, primary: bool = True) -> tk.Button:
@@ -118,53 +112,19 @@ class AuthApp(tk.Tk):
             relief="flat",
             font=FONT_BOLD,
             cursor="hand2",
-            padx=16,
-            pady=8,
+            padx=12,
+            pady=6,
         )
-        btn.pack(fill="x", pady=(4, 8))
+        btn.pack(fill="x", pady=(2, 6))
         return btn
 
     def _link(self, parent, text: str, command) -> tk.Label:
         lbl = tk.Label(
-            parent,
-            text=text,
-            bg=CARD,
-            fg=ACCENT,
-            font=FONT_SMALL,
-            cursor="hand2",
+            parent, text=text, bg=CARD, fg=ACCENT, font=FONT_SMALL, cursor="hand2"
         )
-        lbl.pack(pady=(0, 8))
+        lbl.pack(pady=(0, 6))
         lbl.bind("<Button-1>", lambda _e: command())
         return lbl
-
-    def _bind_mousewheel(self, canvas: tk.Canvas):
-        """Enable scroll with mouse wheel / trackpad (macOS + others)."""
-
-        def on_mousewheel(event):
-            # macOS: event.delta is small ints; Windows: multiples of 120
-            if sys.platform == "darwin":
-                canvas.yview_scroll(-1 * event.delta, "units")
-            else:
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        def on_linux_up(_event):
-            canvas.yview_scroll(-1, "units")
-
-        def on_linux_down(_event):
-            canvas.yview_scroll(1, "units")
-
-        def bind_to(_widget):
-            canvas.bind_all("<MouseWheel>", on_mousewheel)
-            canvas.bind_all("<Button-4>", on_linux_up)
-            canvas.bind_all("<Button-5>", on_linux_down)
-
-        def unbind(_widget):
-            canvas.unbind_all("<MouseWheel>")
-            canvas.unbind_all("<Button-4>")
-            canvas.unbind_all("<Button-5>")
-
-        canvas.bind("<Enter>", bind_to)
-        canvas.bind("<Leave>", unbind)
 
     def _error(self, msg: str):
         messagebox.showerror("Error", msg, parent=self)
@@ -179,11 +139,11 @@ class AuthApp(tk.Tk):
 
     def show_auth(self):
         self._clear()
-        self.geometry("440x700")
+        self.geometry("400x720")
 
         tk.Label(
             self.container, text="Welcome", bg=BG, fg=TEXT, font=FONT_TITLE
-        ).pack(pady=(0, 12))
+        ).pack(pady=(0, 8))
 
         card = self._card(self.container)
         nb = ttk.Notebook(card)
@@ -198,7 +158,7 @@ class AuthApp(tk.Tk):
         self._build_register(register_tab)
 
     def _build_login(self, parent):
-        frame = tk.Frame(parent, bg=CARD, padx=8, pady=16)
+        frame = tk.Frame(parent, bg=CARD, padx=8, pady=12)
         frame.pack(fill="both", expand=True)
 
         self._label(frame, "Email").pack(fill="x")
@@ -241,29 +201,9 @@ class AuthApp(tk.Tk):
         self._link(frame, "Forgot password?", do_forgot)
 
     def _build_register(self, parent):
-        outer = tk.Frame(parent, bg=CARD)
-        outer.pack(fill="both", expand=True)
-
-        canvas = tk.Canvas(outer, bg=CARD, highlightthickness=0)
-        scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        frame = tk.Frame(canvas, bg=CARD, padx=8, pady=12)
-
-        window_id = canvas.create_window((0, 0), window=frame, anchor="nw")
-
-        def _on_frame_configure(_event=None):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-
-        def _on_canvas_configure(event):
-            canvas.itemconfig(window_id, width=event.width)
-
-        frame.bind("<Configure>", _on_frame_configure)
-        canvas.bind("<Configure>", _on_canvas_configure)
-        canvas.configure(yscrollcommand=scroll.set)
-
-        canvas.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-
-        self._bind_mousewheel(canvas)
+        # Compact form — everything visible, no canvas/scroll
+        frame = tk.Frame(parent, bg=CARD, padx=8, pady=8)
+        frame.pack(fill="both", expand=True)
 
         fields = {}
         for key, label, show in [
@@ -301,14 +241,14 @@ class AuthApp(tk.Tk):
 
         self._button(frame, "Register", do_register)
 
-    # ---- Main (Profile / Data) ----
+    # ---- Main ----
 
     def show_main(self):
         self._clear()
-        self.geometry("480x700")
+        self.geometry("420x700")
 
         header = tk.Frame(self.container, bg=BG)
-        header.pack(fill="x", pady=(0, 12))
+        header.pack(fill="x", pady=(0, 8))
 
         user_label = (
             self.current_user.get("email", "User") if self.current_user else "User"
@@ -326,8 +266,8 @@ class AuthApp(tk.Tk):
             relief="flat",
             font=FONT_SMALL,
             cursor="hand2",
-            padx=10,
-            pady=4,
+            padx=8,
+            pady=3,
         ).pack(side="right")
 
         card = self._card(self.container)
@@ -343,27 +283,8 @@ class AuthApp(tk.Tk):
         self._build_data(data_tab)
 
     def _build_profile(self, parent):
-        outer = tk.Frame(parent, bg=CARD)
-        outer.pack(fill="both", expand=True)
-
-        canvas = tk.Canvas(outer, bg=CARD, highlightthickness=0)
-        scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        frame = tk.Frame(canvas, bg=CARD, padx=8, pady=12)
-
-        window_id = canvas.create_window((0, 0), window=frame, anchor="nw")
-
-        def _on_frame_configure(_event=None):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-
-        def _on_canvas_configure(event):
-            canvas.itemconfig(window_id, width=event.width)
-
-        frame.bind("<Configure>", _on_frame_configure)
-        canvas.bind("<Configure>", _on_canvas_configure)
-        canvas.configure(yscrollcommand=scroll.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-        self._bind_mousewheel(canvas)
+        frame = tk.Frame(parent, bg=CARD, padx=8, pady=8)
+        frame.pack(fill="both", expand=True)
 
         try:
             profile = self.api.me()
@@ -424,15 +345,15 @@ class AuthApp(tk.Tk):
         self._button(frame, "Change password", change_pass, primary=False)
 
     def _build_data(self, parent):
-        frame = tk.Frame(parent, bg=CARD, padx=8, pady=12)
+        frame = tk.Frame(parent, bg=CARD, padx=8, pady=8)
         frame.pack(fill="both", expand=True)
 
-        self._label(frame, "My notes (custom model)", font=FONT_BOLD).pack(fill="x")
+        self._label(frame, "My notes", font=FONT_BOLD).pack(fill="x")
 
         list_frame = tk.Frame(frame, bg=CARD)
-        list_frame.pack(fill="both", expand=True, pady=(8, 8))
+        list_frame.pack(fill="both", expand=True, pady=(6, 6))
 
-        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar = tk.Scrollbar(list_frame)
         scrollbar.pack(side="right", fill="y")
 
         self.notes_list = tk.Listbox(
@@ -445,6 +366,7 @@ class AuthApp(tk.Tk):
             font=FONT,
             highlightthickness=0,
             yscrollcommand=scrollbar.set,
+            height=6,
         )
         self.notes_list.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.notes_list.yview)
@@ -455,7 +377,7 @@ class AuthApp(tk.Tk):
         self._label(frame, "Body").pack(fill="x")
         body_entry = tk.Text(
             frame,
-            height=3,
+            height=2,
             bg=ENTRY_BG,
             fg=TEXT,
             insertbackground=TEXT,
@@ -465,7 +387,7 @@ class AuthApp(tk.Tk):
             highlightbackground=MUTED,
             highlightcolor=ACCENT,
         )
-        body_entry.pack(fill="x", pady=(2, 12))
+        body_entry.pack(fill="x", pady=(1, 6))
 
         def refresh_list():
             self.notes_list.delete(0, "end")
@@ -567,8 +489,8 @@ class AuthApp(tk.Tk):
                 relief="flat",
                 font=FONT_BOLD,
                 cursor="hand2",
-                padx=12,
-                pady=6,
+                padx=10,
+                pady=5,
             ).pack(side="left", padx=(0, 6))
 
         refresh_list()
