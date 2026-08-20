@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "users",
     "authentication",
+    "notes",
 ]
 
 MIDDLEWARE = [
@@ -71,9 +72,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# ---------------------------------------------------------------------------
-# Database: Postgres if POSTGRES_HOST is set, otherwise SQLite
-# ---------------------------------------------------------------------------
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "")
 
 if POSTGRES_HOST:
