@@ -8,6 +8,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Django
 *.log
@@ -16,11 +19,16 @@ db.sqlite3-journal
 media/
 staticfiles/
 
-# Environment
+# Environment (keep .env.example)
 .env
-.env.*
+.env.local
+.env.*.local
 
-# IDE
+# IDE / OS
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
+
+# Desktop / misc
+*.pyc
