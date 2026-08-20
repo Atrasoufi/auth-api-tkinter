@@ -1,8 +1,10 @@
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -13,7 +15,14 @@ from .serializers import (
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     RegisterSerializer,
+    UserSerializer,
 )
+
+
+class PasswordResetRateThrottle(AnonRateThrottle):
+    """Limit password-reset requests to prevent abuse."""
+
+    scope = "password_reset"
 
 
 class HealthCheckView(APIView):
@@ -82,6 +91,16 @@ class LogoutView(APIView):
         )
 
 
+class MeView(APIView):
+    """GET /api/auth/me/ — current authenticated user profile."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
+
+
 class ChangePasswordView(APIView):
     """POST /api/auth/change-password/"""
 
@@ -101,10 +120,40 @@ class ChangePasswordView(APIView):
         )
 
 
+def _send_password_reset_email(user, uid, token):
+    frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
+    reset_link = f"{frontend_url}/reset-password?uid={uid}&token={token}"
+
+    context = {
+        "username": user.username,
+        "reset_link": reset_link,
+    }
+
+    subject = "Password Reset Request"
+    text_body = render_to_string(
+        "authentication/password_reset_email.txt", context
+    )
+    html_body = render_to_string(
+        "authentication/password_reset_email.html", context
+    )
+
+    message = EmailMultiAlternatives(
+        subject=subject,
+        body=text_body,
+        from_email=getattr(
+            settings, "DEFAULT_FROM_EMAIL", "noreply@example.com"
+        ),
+        to=[user.email],
+    )
+    message.attach_alternative(html_body, "text/html")
+    message.send(fail_silently=False)
+
+
 class PasswordResetRequestView(APIView):
     """POST /api/auth/password-reset/  body: {"email": "..."}"""
 
     permission_classes = [AllowAny]
+    throttle_classes = [PasswordResetRateThrottle]
 
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
@@ -113,28 +162,8 @@ class PasswordResetRequestView(APIView):
 
         # Always return the same message (security: do not leak user existence)
         if result:
-            user = result["user"]
-            uid = result["uid"]
-            token = result["token"]
-
-            frontend_url = getattr(
-                settings, "FRONTEND_URL", "http://localhost:5173"
-            )
-            reset_link = f"{frontend_url}/reset-password?uid={uid}&token={token}"
-
-            send_mail(
-                subject="Password Reset Request",
-                message=(
-                    f"Hi {user.username},\n\n"
-                    f"You requested a password reset. Click the link below:\n\n"
-                    f"{reset_link}\n\n"
-                    f"If you did not request this, ignore this email.\n"
-                ),
-                from_email=getattr(
-                    settings, "DEFAULT_FROM_EMAIL", "noreply@example.com"
-                ),
-                recipient_list=[user.email],
-                fail_silently=False,
+            _send_password_reset_email(
+                result["user"], result["uid"], result["token"]
             )
 
         return Response(
