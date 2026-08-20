@@ -11,13 +11,39 @@ scenario_django/
 │   ├── users/            # custom User model (email login + phone)
 │   └── config/           # settings, urls
 ├── desktop/              # tkinter desktop app
-│   ├── app.py
-│   └── api_client.py
+├── docker/
+│   └── entrypoint.sh
+├── Dockerfile
+├── docker-compose.yml
 ├── .env.example
 └── requirements.txt
 ```
 
-## Backend setup
+## Quick start with Docker (recommended)
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+- API: http://127.0.0.1:8000/api/
+- Health: http://127.0.0.1:8000/api/health/
+- Postgres on port `5432`
+
+Migrations run automatically on container start.
+
+Useful commands:
+
+```bash
+docker compose up --build -d      # background
+docker compose logs -f web        # API logs
+docker compose exec web python manage.py createsuperuser
+docker compose exec web python manage.py test authentication
+docker compose down               # stop
+docker compose down -v            # stop + delete DB volume
+```
+
+## Backend without Docker
 
 ```bash
 cd back
@@ -25,7 +51,8 @@ python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r ../requirements.txt
 
-cp ../.env.example ../.env  # optional: SMTP, SECRET_KEY, …
+cp ../.env.example ../.env
+# leave POSTGRES_HOST empty → SQLite
 
 python manage.py migrate
 python manage.py test authentication
@@ -52,24 +79,29 @@ Login uses **email** (`USERNAME_FIELD`).
 
 ## Desktop client
 
+Runs on the host (not inside Docker):
+
 ```bash
 cd desktop
 pip install -r requirements.txt
 python app.py
 ```
 
-Needs the backend running. Tabs: Login / Register / Profile / Data.
+Needs the API at `http://127.0.0.1:8000/api` (Docker or local `runserver`).
 
-On Linux, if tkinter is missing: `sudo apt install python3-tk`
+On Linux: `sudo apt install python3-tk` if tkinter is missing.
 
 ## Environment (`.env`)
 
-Copy from `.env.example`. Important vars:
+Copy from `.env.example`:
 
-- `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`
-- `FRONTEND_URL` — link in password-reset emails
-- `EMAIL_HOST` / `EMAIL_PORT` / … — leave empty to print mail to console
-- `THROTTLE_PASSWORD_RESET` — default `5/hour`
+| Variable | Notes |
+|----------|--------|
+| `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` | Django core |
+| `FRONTEND_URL` | Links in password-reset emails |
+| `EMAIL_*` | Empty `EMAIL_HOST` → console backend |
+| `THROTTLE_PASSWORD_RESET` | Default `5/hour` |
+| `POSTGRES_*` | Used by Docker Compose |
 
 ## License
 
