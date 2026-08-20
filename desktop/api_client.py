@@ -1,4 +1,4 @@
-"""Thin HTTP client for the Django authentication API."""
+"""Thin HTTP client for the Django authentication + notes API."""
 
 from __future__ import annotations
 
@@ -29,14 +29,13 @@ class AuthAPI:
 
     def _handle(self, response: requests.Response):
         try:
-            data = response.json()
+            data = response.json() if response.content else {}
         except ValueError:
             data = {"detail": response.text or "Unknown error"}
 
         if response.ok:
             return data
 
-        # DRF validation errors are often dicts of field -> list
         if isinstance(data, dict):
             if "detail" in data:
                 msg = str(data["detail"])
@@ -53,7 +52,7 @@ class AuthAPI:
 
         raise APIError(msg, status_code=response.status_code, details=data)
 
-    # ---- public endpoints ----
+    # ---- auth ----
 
     def register(
         self,
@@ -103,8 +102,6 @@ class AuthAPI:
             timeout=15,
         )
         return self._handle(r)
-
-    # ---- authenticated endpoints ----
 
     def me(self) -> dict:
         r = requests.get(
@@ -173,3 +170,39 @@ class AuthAPI:
             self.access = None
             self.refresh = None
         return data
+
+    # ---- notes (Data tab) ----
+
+    def list_notes(self) -> list:
+        r = requests.get(
+            self._url("notes/"),
+            headers=self._headers(auth=True),
+            timeout=15,
+        )
+        return self._handle(r)
+
+    def create_note(self, title: str, body: str = "") -> dict:
+        r = requests.post(
+            self._url("notes/"),
+            json={"title": title, "body": body},
+            headers=self._headers(auth=True),
+            timeout=15,
+        )
+        return self._handle(r)
+
+    def update_note(self, note_id: int, title: str, body: str = "") -> dict:
+        r = requests.patch(
+            self._url(f"notes/{note_id}/"),
+            json={"title": title, "body": body},
+            headers=self._headers(auth=True),
+            timeout=15,
+        )
+        return self._handle(r)
+
+    def delete_note(self, note_id: int) -> None:
+        r = requests.delete(
+            self._url(f"notes/{note_id}/"),
+            headers=self._headers(auth=True),
+            timeout=15,
+        )
+        self._handle(r)
