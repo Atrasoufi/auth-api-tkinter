@@ -113,6 +113,40 @@ class LogoutAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_205_RESET_CONTENT)
 
 
+class MeAPITestCase(APITestCase):
+    url = "/api/auth/me/"
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="atra@example.com",
+            username="atra",
+            password="StrongPassword123!",
+            first_name="Atra",
+            last_name="Soufi",
+        )
+        refresh = RefreshToken.for_user(self.user)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}"
+        )
+
+    def test_authenticated_user_can_get_profile(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["email"], "atra@example.com")
+        self.assertEqual(response.data["username"], "atra")
+        self.assertEqual(response.data["first_name"], "Atra")
+        self.assertEqual(response.data["last_name"], "Soufi")
+        self.assertIn("id", response.data)
+        self.assertIn("date_joined", response.data)
+
+    def test_unauthenticated_user_cannot_get_profile(self):
+        self.client.credentials()
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
 class ChangePasswordAPITestCase(APITestCase):
     url = "/api/auth/change-password/"
 
@@ -161,7 +195,7 @@ class PasswordResetAPITestCase(APITestCase):
             password="OldPassword123!",
         )
 
-    def test_password_reset_request_sends_email(self):
+    def test_password_reset_request_sends_html_email(self):
         response = self.client.post(
             self.request_url,
             {"email": "atra@example.com"},
@@ -170,7 +204,14 @@ class PasswordResetAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("Password Reset", mail.outbox[0].subject)
+
+        email = mail.outbox[0]
+        self.assertIn("Password Reset", email.subject)
+        self.assertTrue(email.alternatives)  # HTML part attached
+        html_body, content_type = email.alternatives[0]
+        self.assertEqual(content_type, "text/html")
+        self.assertIn("Reset Password", html_body)
+        self.assertIn("atra", html_body)
 
     def test_password_reset_request_unknown_email_still_ok(self):
         response = self.client.post(
