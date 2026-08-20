@@ -171,11 +171,21 @@ class AuthAPI:
             self.refresh = None
         return data
 
-    # ---- notes (Data tab) ----
+    # ---- notes ----
 
-    def list_notes(self) -> list:
+    def list_notes(
+        self,
+        *,
+        search: str = "",
+        page: int = 1,
+        page_size: int = 10,
+    ) -> dict:
+        params = {"page": page, "page_size": page_size}
+        if search:
+            params["search"] = search
         r = requests.get(
             self._url("notes/"),
+            params=params,
             headers=self._headers(auth=True),
             timeout=15,
         )
