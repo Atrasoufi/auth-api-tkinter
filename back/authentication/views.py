@@ -14,6 +14,7 @@ from .serializers import (
     CustomTokenObtainPairSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
+    ProfileUpdateSerializer,
     RegisterSerializer,
     UserSerializer,
 )
@@ -46,11 +47,7 @@ class RegisterView(APIView):
         return Response(
             {
                 "message": "Registration successful.",
-                "user": {
-                    "id": user.id,
-                    "email": user.email,
-                    "username": user.username,
-                },
+                "user": UserSerializer(user).data,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -92,13 +89,25 @@ class LogoutView(APIView):
 
 
 class MeView(APIView):
-    """GET /api/auth/me/ — current authenticated user profile."""
+    """
+    GET  /api/auth/me/  — current user profile
+    PATCH /api/auth/me/ — update first_name, last_name, phone
+    """
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        serializer = UserSerializer(request.user)
-        return Response(serializer.data)
+        return Response(UserSerializer(request.user).data)
+
+    def patch(self, request):
+        serializer = ProfileUpdateSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(UserSerializer(request.user).data)
 
 
 class ChangePasswordView(APIView):
