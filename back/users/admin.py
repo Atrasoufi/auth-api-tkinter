@@ -6,20 +6,17 @@ from .models import User
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    fieldsets = UserAdmin.fieldsets + (
-        (
-            "Authentication",
-            {
-                "fields": ("is_email_verified",),
-            },
-        ),
-    )
+    list_display = ("email", "username", "is_staff", "is_active", "date_joined")
+    ordering = ("email",)
+    search_fields = ("email", "username")
 
-    add_fieldsets = UserAdmin.add_fieldsets + (
+    fieldsets = UserAdmin.fieldsets
+    add_fieldsets = (
         (
-            "Additional Information",
+            None,
             {
-                "fields": ("email",),
+                "classes": ("wide",),
+                "fields": ("email", "username", "password1", "password2"),
             },
         ),
     )
